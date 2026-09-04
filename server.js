@@ -4,136 +4,335 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "20mb" }));
 
-// Teste do servidor
+app.use(
+  express.json({
+    limit: "25mb",
+  })
+);
+
+const PORT = process.env.PORT || 10000;
+
+// TESTE DO SERVIDOR
 app.get("/", (req, res) => {
   res.json({
     status: "online",
     projeto: "Musa Salão IA",
-    mensagem: "Backend da Musa funcionando ✨"
+    mensagem: "Backend da Musa funcionando ✨",
   });
 });
 
-// IA DA MUSA
+// ROTA PRINCIPAL DA MUSA
 app.post("/musa", async (req, res) => {
   try {
-    const { imagem, ocasiao, estilo, descricao } = req.body;
-
-    if (!imagem) {
-      return res.status(400).json({
-        erro: "Envie uma imagem para a Musa."
-      });
-    }
-
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({
-        erro: "GEMINI_API_KEY não configurada."
+        sucesso: false,
+        erro: "GEMINI_API_KEY não encontrada no servidor.",
       });
     }
 
-    // Aceita imagem em formato data:image/jpeg;base64,...
+    const {
+      imagem,
+      ocasiao = "",
+      estilo = "",
+      descricao = "",
+    } = req.body;
+
+    if (!imagem) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Nenhuma imagem foi enviada.",
+      });
+    }
+
+    // Espera receber:
+    // data:image/jpeg;base64,XXXXX
     const match = imagem.match(
-      /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
+      /^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/
     );
 
     if (!match) {
       return res.status(400).json({
-        erro: "Formato de imagem inválido."
+        sucesso: false,
+        erro: "Formato da imagem inválido.",
       });
     }
 
-    const mimeType = match[1];
-    const base64 = match[2];
+    let mimeType = match[1];
+    const base64Image = match[2];
+
+    if (mimeType === "image/jpg") {
+      mimeType = "image/jpeg";
+    }
 
     const prompt = `
-Você é Musa, uma consultora virtual especialista em maquiagem e beleza.
+Você é MUSA, uma inteligência artificial especialista em maquiagem virtual realista.
 
-A cliente enviou uma fotografia do próprio rosto para receber uma simulação personalizada.
+Sua tarefa é EDITAR A FOTO DA CLIENTE fornecida como referência.
 
-Preferências:
-Ocasião: ${ocasiao || "não informada"}
-Estilo: ${estilo || "não informado"}
-Pedido da cliente: ${descricao || "não informado"}
+A pessoa da imagem deve continuar sendo claramente a MESMA PESSOA.
 
-Analise apenas características visuais úteis para maquiagem, como formato aparente do rosto, iluminação, contraste e características visíveis de olhos, lábios e pele.
+PRESERVE COM ALTA FIDELIDADE:
+- identidade facial
+- formato do rosto
+- olhos
+- nariz
+- boca
+- sobrancelhas
+- proporções faciais
+- tom de pele
+- textura natural da pele
+- cabelo
+- pose
+- ângulo da câmera
+- enquadramento
+- expressão facial
+- fundo original
+- iluminação original sempre que possível
 
-Crie uma sugestão de maquiagem personalizada que preserve a identidade e as características naturais da pessoa.
+MODIFIQUE SOMENTE A MAQUIAGEM.
 
-Responda em português do Brasil, de maneira feminina, elegante e objetiva.
+Ocasião escolhida:
+${ocasiao || "não informada"}
 
-Retorne:
-1. Nome da make
-2. Pele
-3. Olhos
-4. Lábios
-5. Blush/contorno/iluminador
-6. Paleta de cores sugerida
-7. Uma descrição curta do resultado visual
+Estilo escolhido:
+${estilo || "não informado"}
+
+Pedido adicional da cliente:
+${descricao || "nenhum pedido adicional"}
+
+Crie uma maquiagem profissional, elegante, realista e fotograficamente convincente de acordo com as escolhas acima.
+
+A maquiagem pode envolver, conforme adequado:
+- preparação e uniformização natural da pele
+- blush
+- contorno suave
+- iluminador
+- sobrancelhas bem definidas sem modificar seu formato natural
+- sombra
+- delineado
+- máscara de cílios
+- batom ou gloss
+
+REGRAS OBRIGATÓRIAS:
+
+NÃO altere a identidade da pessoa.
+
+NÃO transforme o rosto em outra pessoa.
+
+NÃO altere formato dos olhos, nariz, boca ou rosto.
+
+NÃO rejuvenesça ou envelheça a pessoa artificialmente.
+
+NÃO altere cabelo ou penteado.
+
+NÃO altere roupas.
+
+NÃO altere o cenário.
+
+NÃO crie colagem.
+
+NÃO crie comparação antes e depois.
+
+NÃO coloque duas pessoas.
+
+NÃO coloque textos.
+
+NÃO coloque legendas.
+
+NÃO coloque títulos.
+
+NÃO coloque nomes de produtos.
+
+NÃO coloque marcas.
+
+NÃO coloque setas.
+
+NÃO coloque molduras.
+
+NÃO coloque ícones.
+
+NÃO coloque explicações dentro da imagem.
+
+NÃO coloque marca d'água visual adicional.
+
+O resultado deve parecer uma fotografia real da mesma cliente depois de receber uma maquiagem profissional.
+
+A imagem final deve conter SOMENTE A FOTO EDITADA.
 `;
 
-    const resposta = await fetch(
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
-  {
-      
+    const respostaGemini = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
+          "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
-          contents: [
+          model: "gemini-3.1-flash-image",
+
+          input: [
             {
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64
-                  }
-                }
-              ]
-            }
-          ]
-        })
+              type: "text",
+              text: prompt,
+            },
+            {
+              type: "image",
+              mime_type: mimeType,
+              data: base64Image,
+            },
+          ],
+
+          response_format: {
+            type: "image",
+          },
+        }),
       }
     );
 
-    const dados = await resposta.json();
+    const textoResposta = await respostaGemini.text();
 
-    if (!resposta.ok) {
-      console.error("Erro Gemini:", dados);
+    let dados;
 
-      return res.status(resposta.status).json({
-        erro: "A Musa não conseguiu analisar a imagem.",
-        detalhes: dados
+    try {
+      dados = JSON.parse(textoResposta);
+    } catch {
+      console.error("Resposta não JSON do Gemini:", textoResposta);
+
+      return res.status(500).json({
+        sucesso: false,
+        erro: "O Gemini retornou uma resposta inválida.",
       });
     }
 
-    const resultado =
-      dados?.candidates?.[0]?.content?.parts
-        ?.map((parte) => parte.text || "")
-        .join("\n")
-        .trim() || "Não foi possível gerar a recomendação.";
+    if (!respostaGemini.ok) {
+      console.error("Erro Gemini:", dados);
 
-    res.json({
+      return res.status(respostaGemini.status).json({
+        sucesso: false,
+        erro:
+          dados?.error?.message ||
+          "Não foi possível gerar a maquiagem.",
+        detalhes: dados,
+      });
+    }
+
+    // A API Interactions pode retornar a imagem
+    // como output_image ou dentro das saídas.
+    let imagemGerada = null;
+    let tipoImagem = "image/png";
+
+    if (dados.output_image?.data) {
+      imagemGerada = dados.output_image.data;
+
+      if (dados.output_image.mime_type) {
+        tipoImagem = dados.output_image.mime_type;
+      }
+    }
+
+    // Busca alternativa caso a estrutura venha dentro de outputs
+    if (!imagemGerada && Array.isArray(dados.outputs)) {
+      for (const output of dados.outputs) {
+        if (output?.type === "image" && output?.data) {
+          imagemGerada = output.data;
+          tipoImagem = output.mime_type || "image/png";
+          break;
+        }
+      }
+    }
+
+    // Busca profunda como fallback
+    if (!imagemGerada) {
+      const procurarImagem = (obj) => {
+        if (!obj || typeof obj !== "object") {
+          return null;
+        }
+
+        if (
+          obj.type === "image" &&
+          typeof obj.data === "string"
+        ) {
+          return {
+            data: obj.data,
+            mimeType:
+              obj.mime_type ||
+              obj.mimeType ||
+              "image/png",
+          };
+        }
+
+        if (
+          obj.inlineData?.data &&
+          typeof obj.inlineData.data === "string"
+        ) {
+          return {
+            data: obj.inlineData.data,
+            mimeType:
+              obj.inlineData.mimeType ||
+              "image/png",
+          };
+        }
+
+        for (const valor of Object.values(obj)) {
+          if (Array.isArray(valor)) {
+            for (const item of valor) {
+              const encontrado = procurarImagem(item);
+              if (encontrado) return encontrado;
+            }
+          } else if (valor && typeof valor === "object") {
+            const encontrado = procurarImagem(valor);
+            if (encontrado) return encontrado;
+          }
+        }
+
+        return null;
+      };
+
+      const encontrada = procurarImagem(dados);
+
+      if (encontrada) {
+        imagemGerada = encontrada.data;
+        tipoImagem = encontrada.mimeType;
+      }
+    }
+
+    if (!imagemGerada) {
+      console.error(
+        "Gemini respondeu sem imagem:",
+        JSON.stringify(dados)
+      );
+
+      return res.status(500).json({
+        sucesso: false,
+        erro:
+          "A Musa recebeu a foto, mas o Gemini não retornou uma imagem.",
+      });
+    }
+
+    const dataUrl = `data:${tipoImagem};base64,${imagemGerada}`;
+
+    return res.json({
       sucesso: true,
-      resultado
+      imagem: dataUrl,
+      imagemGerada: dataUrl,
+      resultado: dataUrl,
+      mensagem: "Make criada pela Musa ✨",
     });
-
   } catch (erro) {
-    console.error("Erro Musa:", erro);
+    console.error("Erro interno da Musa:", erro);
 
-    res.status(500).json({
-      erro: "Erro interno ao executar a Musa."
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Erro interno ao criar a maquiagem.",
+      detalhes: erro.message,
     });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
   console.log(`Musa Salão IA online na porta ${PORT}`);
 });
