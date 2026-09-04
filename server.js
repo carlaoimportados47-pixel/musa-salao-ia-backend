@@ -164,164 +164,114 @@ O resultado deve parecer uma fotografia real da mesma cliente depois de receber 
 A imagem final deve conter SOMENTE A FOTO EDITADA.
 `;
 
-    const respostaGemini = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          model: "gemini-3.1-flash-image",
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+const apiToken = process.env.CLOUDFLARE_API_TOKEN;
 
-          input: [
-            {
-              type: "text",
-              text: prompt,
-            },
-            {
-              type: "image",
-              mime_type: mimeType,
-              data: base64Image,
-            },
-          ],
+if (!accountId || !apiToken) {
+  return res.status(500).json({
+    success: false,
+    erro: "Cloudflare não configurada no servidor.",
+  });
+}
 
-          response_format: {
-            type: "image",
-          },
-        }),
-      }
-    );
+const form = new FormData();
 
-    const textoResposta = await respostaGemini.text();
+const imagemBuffer = Buffer.from(base64Image, "base64");
 
-    let dados;
+form.append("prompt", prompt);
 
-    try {
-      dados = JSON.parse(textoResposta);
-    } catch {
-      console.error("Resposta não JSON do Gemini:", textoResposta);
+form.append(
+  "input_image_0",
+  new Blob([imagemBuffer], {
+    type: mimeType || "image/jpeg",
+  }),
+  "musa-foto.jpg"
+);
 
-      return res.status(500).json({
-        sucesso: false,
-        erro: "O Gemini retornou uma resposta inválida.",
-      });
-    }
+// O FLUX.2 Klein exige que imagens de entrada sejam menores que 512x512.
+// A saída pode continuar em 512x512.
+form.append("width", "512");
+form.append("height", "512");
 
-    if (!respostaGemini.ok) {
-      console.error("Erro Gemini:", dados);
+console.log("Musa IA: enviando foto para Cloudflare Workers AI...");
 
-      return res.status(respostaGemini.status).json({
-        sucesso: false,
-        erro:
-          dados?.error?.message ||
-          "Não foi possível gerar a maquiagem.",
-        detalhes: dados,
-      });
-    }
+const respostaCloudflare = await fetch(
+  `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: form,
+  }
+);
 
-    // A API Interactions pode retornar a imagem
-    // como output_image ou dentro das saídas.
-    let imagemGerada = null;
-    let tipoImagem = "image/png";
+const textoResposta = await respostaCloudflare.text();
 
-    if (dados.output_image?.data) {
-      imagemGerada = dados.output_image.data;
+let dadosCloudflare;
 
-      if (dados.output_image.mime_type) {
-        tipoImagem = dados.output_image.mime_type;
-      }
-    }
+try {
+  dadosCloudflare = JSON.parse(textoResposta);
+} catch {
+  console.error(
+    "Resposta inválida da Cloudflare:",
+    textoResposta
+  );
 
-    // Busca alternativa caso a estrutura venha dentro de outputs
-    if (!imagemGerada && Array.isArray(dados.outputs)) {
-      for (const output of dados.outputs) {
-        if (output?.type === "image" && output?.data) {
-          imagemGerada = output.data;
-          tipoImagem = output.mime_type || "image/png";
-          break;
-        }
-      }
-    }
+  return res.status(500).json({
+    success: false,
+    erro: "A Cloudflare retornou uma resposta inválida.",
+  });
+}
 
-    // Busca profunda como fallback
-    if (!imagemGerada) {
-      const procurarImagem = (obj) => {
-        if (!obj || typeof obj !== "object") {
-          return null;
-        }
+if (
+  !respostaCloudflare.ok ||
+  dadosCloudflare?.success === false
+) {
+  console.error(
+    "Erro Cloudflare:",
+    JSON.stringify(dadosCloudflare, null, 2)
+  );
 
-        if (
-          obj.type === "image" &&
-          typeof obj.data === "string"
-        ) {
-          return {
-            data: obj.data,
-            mimeType:
-              obj.mime_type ||
-              obj.mimeType ||
-              "image/png",
-          };
-        }
+  return res.status(respostaCloudflare.status || 500).json({
+    success: false,
+    erro:
+      dadosCloudflare?.errors?.[0]?.message ||
+      "Não foi possível gerar a maquiagem.",
+    detalhes: dadosCloudflare,
+  });
+}
 
-        if (
-          obj.inlineData?.data &&
-          typeof obj.inlineData.data === "string"
-        ) {
-          return {
-            data: obj.inlineData.data,
-            mimeType:
-              obj.inlineData.mimeType ||
-              "image/png",
-          };
-        }
+const imagemGerada =
+  dadosCloudflare?.result?.image ||
+  dadosCloudflare?.image;
 
-        for (const valor of Object.values(obj)) {
-          if (Array.isArray(valor)) {
-            for (const item of valor) {
-              const encontrado = procurarImagem(item);
-              if (encontrado) return encontrado;
-            }
-          } else if (valor && typeof valor === "object") {
-            const encontrado = procurarImagem(valor);
-            if (encontrado) return encontrado;
-          }
-        }
+if (!imagemGerada) {
+  console.error(
+    "Cloudflare respondeu sem imagem:",
+    JSON.stringify(dadosCloudflare, null, 2)
+  );
 
-        return null;
-      };
+  return res.status(500).json({
+    success: false,
+    erro: "A Musa recebeu a foto, mas a IA não retornou uma imagem.",
+  });
+}
 
-      const encontrada = procurarImagem(dados);
+const dataUrl = imagemGerada.startsWith("data:image")
+  ? imagemGerada
+  : `data:image/jpeg;base64,${imagemGerada}`;
 
-      if (encontrada) {
-        imagemGerada = encontrada.data;
-        tipoImagem = encontrada.mimeType;
-      }
-    }
+console.log("Musa IA: maquiagem criada com sucesso.");
 
-    if (!imagemGerada) {
-      console.error(
-        "Gemini respondeu sem imagem:",
-        JSON.stringify(dados)
-      );
-
-      return res.status(500).json({
-        sucesso: false,
-        erro:
-          "A Musa recebeu a foto, mas o Gemini não retornou uma imagem.",
-      });
-    }
-
-    const dataUrl = `data:${tipoImagem};base64,${imagemGerada}`;
-
-    return res.json({
-      sucesso: true,
-      imagem: dataUrl,
-      imagemGerada: dataUrl,
-      resultado: dataUrl,
-      mensagem: "Make criada pela Musa ✨",
-    });
+return res.json({
+  success: true,
+  imagem: dataUrl,
+  imagemGerada: dataUrl,
+  resultado: dataUrl,
+  image: dataUrl,
+  mensagem: "Make criada pela Musa ✨",
+});
   } catch (erro) {
     console.error("Erro interno da Musa:", erro);
 
