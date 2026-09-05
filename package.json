@@ -1,13 +1,7 @@
 {
-  "name": "musa-salao-ia-backend",
-  "version": "1.0.0",
-  "description": "Backend da Musa Salao IA",
-  "main": "servidor.js",
-  "scripts": {
-    "start": "node servidor.js"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2"
-  }
+  "imagem": "data:image/jpeg;base64,TESTE",
+  "ocasiao": "Festa",
+  "estilo": "Elegante",
+  "descricao": "Teste da Musa",
+  "consentimento": true
 }
