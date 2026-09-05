@@ -4,285 +4,228 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
+app.use(express.json({ limit: "25mb" }));
 
-app.use(
-  express.json({
-    limit: "25mb",
-  })
-);
-
-const PORT = process.env.PORT || 10000;
-
-// TESTE DO SERVIDOR
 app.get("/", (req, res) => {
   res.json({
     status: "online",
     projeto: "Musa Salão IA",
-    mensagem: "Backend da Musa funcionando ✨",
+    mensagem: "Backend da Musa funcionando ✨"
   });
 });
 
-// ROTA PRINCIPAL DA MUSA
 app.post("/musa", async (req, res) => {
   try {
+    const {
+      imagem,
+      ocasiao,
+      estilo,
+      descricao,
+      consentimento
+    } = req.body;
+
+    if (!consentimento) {
+      return res.status(400).json({
+        erro: "É necessário consentimento para utilizar a imagem."
+      });
+    }
+
+    if (!imagem) {
+      return res.status(400).json({
+        erro: "Nenhuma imagem foi enviada."
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({
-        sucesso: false,
-        erro: "GEMINI_API_KEY não encontrada no servidor.",
+        erro: "GEMINI_API_KEY não configurada no servidor."
       });
     }
 
-    const {
-      imagem,
-      ocasiao = "",
-      estilo = "",
-      descricao = "",
-    } = req.body;
-
-    if (!imagem) {
-      return res.status(400).json({
-        sucesso: false,
-        erro: "Nenhuma imagem foi enviada.",
-      });
-    }
-
-    // Espera receber:
-    // data:image/jpeg;base64,XXXXX
+    // Recebe:
+    // data:image/jpeg;base64,AAAA...
     const match = imagem.match(
-      /^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/
+      /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
     );
 
     if (!match) {
       return res.status(400).json({
-        sucesso: false,
-        erro: "Formato da imagem inválido.",
+        erro: "Formato da imagem inválido."
       });
     }
 
-    let mimeType = match[1];
+    const mimeType = match[1];
     const base64Image = match[2];
 
-    if (mimeType === "image/jpg") {
-      mimeType = "image/jpeg";
-    }
-
     const prompt = `
-Você é MUSA, uma inteligência artificial especialista em maquiagem virtual realista.
+Edite a fotografia enviada criando uma simulação REALISTA de maquiagem.
 
-Sua tarefa é EDITAR A FOTO DA CLIENTE fornecida como referência.
+IMPORTANTE:
+- Preserve rigorosamente a identidade da pessoa.
+- Preserve formato do rosto, olhos, nariz, boca, sobrancelhas, cabelo e enquadramento.
+- Não transforme a pessoa em outra pessoa.
+- Não altere idade aparente.
+- Não altere formato corporal.
+- Não mude o fundo, a menos que seja necessário por pequenas correções.
+- Aplique APENAS maquiagem cosmética realista.
+- O resultado deve parecer uma fotografia profissional real, não uma ilustração.
 
-A pessoa da imagem deve continuar sendo claramente a MESMA PESSOA.
+Preferências da cliente:
 
-PRESERVE COM ALTA FIDELIDADE:
-- identidade facial
-- formato do rosto
-- olhos
-- nariz
-- boca
-- sobrancelhas
-- proporções faciais
-- tom de pele
-- textura natural da pele
-- cabelo
-- pose
-- ângulo da câmera
-- enquadramento
-- expressão facial
-- fundo original
-- iluminação original sempre que possível
-
-MODIFIQUE SOMENTE A MAQUIAGEM.
-
-Ocasião escolhida:
+Ocasião:
 ${ocasiao || "não informada"}
 
-Estilo escolhido:
-${estilo || "não informado"}
+Estilo:
+${estilo || "natural"}
 
-Pedido adicional da cliente:
-${descricao || "nenhum pedido adicional"}
+Descrição:
+${descricao || "Crie uma maquiagem harmoniosa e elegante."}
 
-Crie uma maquiagem profissional, elegante, realista e fotograficamente convincente de acordo com as escolhas acima.
+Crie uma make adequada à ocasião e ao estilo informado.
 
-A maquiagem pode envolver, conforme adequado:
-- preparação e uniformização natural da pele
+Pode utilizar, conforme apropriado:
+- base
+- corretivo
+- pó
 - blush
-- contorno suave
+- contorno
 - iluminador
-- sobrancelhas bem definidas sem modificar seu formato natural
 - sombra
-- delineado
+- delineador
 - máscara de cílios
-- batom ou gloss
+- batom
+- gloss
 
-REGRAS OBRIGATÓRIAS:
+A maquiagem deve respeitar características visíveis do rosto e pele.
 
-NÃO altere a identidade da pessoa.
-
-NÃO transforme o rosto em outra pessoa.
-
-NÃO altere formato dos olhos, nariz, boca ou rosto.
-
-NÃO rejuvenesça ou envelheça a pessoa artificialmente.
-
-NÃO altere cabelo ou penteado.
-
-NÃO altere roupas.
-
-NÃO altere o cenário.
-
-NÃO crie colagem.
-
-NÃO crie comparação antes e depois.
-
-NÃO coloque duas pessoas.
-
-NÃO coloque textos.
-
-NÃO coloque legendas.
-
-NÃO coloque títulos.
-
-NÃO coloque nomes de produtos.
-
-NÃO coloque marcas.
-
-NÃO coloque setas.
-
-NÃO coloque molduras.
-
-NÃO coloque ícones.
-
-NÃO coloque explicações dentro da imagem.
-
-NÃO coloque marca d'água visual adicional.
-
-O resultado deve parecer uma fotografia real da mesma cliente depois de receber uma maquiagem profissional.
-
-A imagem final deve conter SOMENTE A FOTO EDITADA.
+Entregue somente a imagem final editada.
 `;
 
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+    console.log("MUSA: enviando imagem ao Gemini");
 
-if (!accountId || !apiToken) {
-  return res.status(500).json({
-    success: false,
-    erro: "Cloudflare não configurada no servidor.",
-  });
-}
+    const respostaGemini = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          model: "gemini-3.1-flash-image",
+          input: [
+            {
+              type: "text",
+              text: prompt
+            },
+            {
+              type: "image",
+              mime_type: mimeType,
+              data: base64Image
+            }
+          ],
+          response_format: {
+            type: "image"
+          }
+        })
+      }
+    );
 
-const form = new FormData();
+    const dados = await respostaGemini.json();
 
-const imagemBuffer = Buffer.from(base64Image, "base64");
+    console.log(
+      "MUSA: status Gemini:",
+      respostaGemini.status
+    );
 
-form.append("prompt", prompt);
+    if (!respostaGemini.ok) {
+      console.error(
+        "MUSA: erro Gemini:",
+        JSON.stringify(dados)
+      );
 
-form.append(
-  "input_image_0",
-  new Blob([imagemBuffer], {
-    type: mimeType || "image/jpeg",
-  }),
-  "musa-foto.jpg"
-);
+      return res.status(respostaGemini.status).json({
+        erro: "O Gemini não conseguiu gerar a maquiagem.",
+        detalhes: dados
+      });
+    }
 
-// O FLUX.2 Klein exige que imagens de entrada sejam menores que 512x512.
-// A saída pode continuar em 512x512.
-form.append("width", "512");
-form.append("height", "512");
+    /*
+      A API Interactions retorna os resultados em steps.
+      Procuramos o bloco final do tipo image.
+    */
 
-console.log("Musa IA: enviando foto para Cloudflare Workers AI...");
+    let imagemGerada = null;
+    let mimeGerado = "image/png";
 
-const respostaCloudflare = await fetch(
-  `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`,
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-    },
-    body: form,
-  }
-);
+    if (Array.isArray(dados.steps)) {
+      for (const step of dados.steps) {
+        if (
+          step.type === "model_output" &&
+          Array.isArray(step.content)
+        ) {
+          for (const bloco of step.content) {
+            if (bloco.type === "image" && bloco.data) {
+              imagemGerada = bloco.data;
 
-const textoResposta = await respostaCloudflare.text();
+              if (bloco.mime_type) {
+                mimeGerado = bloco.mime_type;
+              }
+            }
+          }
+        }
+      }
+    }
 
-let dadosCloudflare;
+    /*
+      Caso a API retorne uma propriedade de conveniência
+      com a imagem final.
+    */
+    if (!imagemGerada && dados.output_image?.data) {
+      imagemGerada = dados.output_image.data;
 
-try {
-  dadosCloudflare = JSON.parse(textoResposta);
-} catch {
-  console.error(
-    "Resposta inválida da Cloudflare:",
-    textoResposta
-  );
+      if (dados.output_image.mime_type) {
+        mimeGerado = dados.output_image.mime_type;
+      }
+    }
 
-  return res.status(500).json({
-    success: false,
-    erro: "A Cloudflare retornou uma resposta inválida.",
-  });
-}
+    if (!imagemGerada) {
+      console.error(
+        "MUSA: nenhuma imagem encontrada:",
+        JSON.stringify(dados)
+      );
 
-if (
-  !respostaCloudflare.ok ||
-  dadosCloudflare?.success === false
-) {
-  console.error(
-    "Erro Cloudflare:",
-    JSON.stringify(dadosCloudflare, null, 2)
-  );
+      return res.status(500).json({
+        erro: "A IA respondeu, mas não devolveu uma imagem."
+      });
+    }
 
-  return res.status(respostaCloudflare.status || 500).json({
-    success: false,
-    erro:
-      dadosCloudflare?.errors?.[0]?.message ||
-      "Não foi possível gerar a maquiagem.",
-    detalhes: dadosCloudflare,
-  });
-}
+    const dataUrl =
+      `data:${mimeGerado};base64,${imagemGerada}`;
 
-const imagemGerada =
-  dadosCloudflare?.result?.image ||
-  dadosCloudflare?.image;
+    console.log("MUSA: maquiagem gerada com sucesso");
 
-if (!imagemGerada) {
-  console.error(
-    "Cloudflare respondeu sem imagem:",
-    JSON.stringify(dadosCloudflare, null, 2)
-  );
+    return res.json({
+      sucesso: true,
+      imagem: dataUrl
+    });
 
-  return res.status(500).json({
-    success: false,
-    erro: "A Musa recebeu a foto, mas a IA não retornou uma imagem.",
-  });
-}
-
-const dataUrl = imagemGerada.startsWith("data:image")
-  ? imagemGerada
-  : `data:image/jpeg;base64,${imagemGerada}`;
-
-console.log("Musa IA: maquiagem criada com sucesso.");
-
-return res.json({
-  success: true,
-  imagem: dataUrl,
-  imagemGerada: dataUrl,
-  resultado: dataUrl,
-  image: dataUrl,
-  mensagem: "Make criada pela Musa ✨",
-});
   } catch (erro) {
-    console.error("Erro interno da Musa:", erro);
+    console.error("MUSA: erro interno:", erro);
 
     return res.status(500).json({
-      sucesso: false,
-      erro: "Erro interno ao criar a maquiagem.",
-      detalhes: erro.message,
+      erro: "Erro interno no servidor da Musa.",
+      detalhes: erro.message
     });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Musa Salão IA online na porta ${PORT}`);
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `Musa Salão IA online na porta ${PORT}`
+  );
 });
