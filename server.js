@@ -7,26 +7,18 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const MAX_GERACOES_TESTE =
-  Number(process.env.MAX_GERACOES_TESTE) || 10;
-
+// Modelo de imagem.
+// Se futuramente quiser trocar pelo Render,
+// basta criar GEMINI_IMAGE_MODEL no Environment.
 const GEMINI_IMAGE_MODEL =
   process.env.GEMINI_IMAGE_MODEL ||
   "gemini-3.1-flash-image";
 
-function supabaseHeaders() {
-  return {
-    apikey: SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    "Content-Type": "application/json"
-  };
-}
-
+// ==========================================
 // TESTE DO BACKEND
+// ==========================================
+
 app.get("/", (req, res) => {
   res.json({
     status: "online",
@@ -35,64 +27,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// CONSULTA QUANTAS GERAÇÕES JÁ FORAM USADAS
-async function consultarUso() {
-  const resposta = await fetch(
-    `${SUPABASE_URL}/rest/v1/musa_usage?id=eq.1&select=geracoes_usadas`,
-    {
-      method: "GET",
-      headers: supabaseHeaders()
-    }
-  );
-
-  if (!resposta.ok) {
-    const texto = await resposta.text();
-
-    throw new Error(
-      `Erro ao consultar Supabase: ${texto}`
-    );
-  }
-
-  const dados = await resposta.json();
-
-  if (!dados.length) {
-    throw new Error(
-      "Registro musa_usage id=1 não encontrado."
-    );
-  }
-
-  return Number(dados[0].geracoes_usadas) || 0;
-}
-
-// ATUALIZA O CONTADOR APÓS SUCESSO
-async function registrarGeracaoSucesso(novoValor) {
-  const resposta = await fetch(
-    `${SUPABASE_URL}/rest/v1/musa_usage?id=eq.1`,
-    {
-      method: "PATCH",
-      headers: {
-        ...supabaseHeaders(),
-        Prefer: "return=representation"
-      },
-      body: JSON.stringify({
-        geracoes_usadas: novoValor,
-        updated_at: new Date().toISOString()
-      })
-    }
-  );
-
-  if (!resposta.ok) {
-    const texto = await resposta.text();
-
-    throw new Error(
-      `Erro ao atualizar Supabase: ${texto}`
-    );
-  }
-
-  return resposta.json();
-}
-
+// ==========================================
 // ROTA PRINCIPAL DA MUSA
+// ==========================================
+
 app.post("/musa", async (req, res) => {
   try {
     const {
@@ -103,7 +41,12 @@ app.post("/musa", async (req, res) => {
       consentimento
     } = req.body;
 
+    console.log("MUSA: nova solicitação recebida");
+
+    // ======================================
     // VALIDAÇÕES
+    // ======================================
+
     if (!consentimento) {
       return res.status(400).json({
         sucesso: false,
@@ -120,6 +63,10 @@ app.post("/musa", async (req, res) => {
     }
 
     if (!GEMINI_API_KEY) {
+      console.error(
+        "MUSA: GEMINI_API_KEY não configurada"
+      );
+
       return res.status(500).json({
         sucesso: false,
         erro:
@@ -127,40 +74,10 @@ app.post("/musa", async (req, res) => {
       });
     }
 
-    if (
-      !SUPABASE_URL ||
-      !SUPABASE_SERVICE_ROLE_KEY
-    ) {
-      return res.status(500).json({
-        sucesso: false,
-        erro:
-          "Supabase não configurado no servidor."
-      });
-    }
+    // ======================================
+    // EXTRAIR A IMAGEM BASE64
+    // ======================================
 
-    // CONSULTA O CONTADOR ANTES DE GASTAR API
-    const geracoesUsadas = await consultarUso();
-
-    console.log(
-      `MUSA: uso atual ${geracoesUsadas}/${MAX_GERACOES_TESTE}`
-    );
-
-    if (geracoesUsadas >= MAX_GERACOES_TESTE) {
-      console.log(
-        `MUSA: LIMITE DE TESTES ATINGIDO - ${geracoesUsadas}/${MAX_GERACOES_TESTE}`
-      );
-
-      return res.status(429).json({
-        sucesso: false,
-        limiteAtingido: true,
-        geracoesUsadas,
-        limite: MAX_GERACOES_TESTE,
-        mensagem:
-          "Os 10 testes gratuitos da Musa foram utilizados."
-      });
-    }
-
-    // EXTRAI BASE64
     const match = imagem.match(
       /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
     );
@@ -175,23 +92,46 @@ app.post("/musa", async (req, res) => {
     const mimeType = match[1];
     const base64Image = match[2];
 
+    // ======================================
     // PROMPT DA MUSA
+    // ======================================
+
     const prompt = `
-Edite a fotografia enviada criando uma simulação REALISTA de maquiagem.
+Você é a Musa Salão IA.
 
-REGRAS IMPORTANTES:
+Sua função é criar uma simulação REALISTA de maquiagem
+sobre a fotografia enviada pela cliente.
 
-- Preserve rigorosamente a identidade da pessoa.
-- Preserve rosto, olhos, nariz, boca, sobrancelhas e cabelo.
-- Preserve o mesmo enquadramento e ângulo da fotografia.
-- Não transforme a pessoa em outra pessoa.
-- Não altere idade aparente.
-- Não altere corpo.
-- Não altere o fundo sem necessidade.
-- Aplique somente maquiagem cosmética realista.
-- O resultado precisa parecer uma fotografia real.
+PRESERVE RIGOROSAMENTE:
 
-Preferências da cliente:
+- identidade da pessoa
+- formato do rosto
+- olhos
+- nariz
+- boca
+- sobrancelhas
+- cabelo
+- tom geral da pele
+- ângulo da fotografia
+- enquadramento
+- fundo da imagem
+
+NÃO transforme a pessoa em outra pessoa.
+
+NÃO altere:
+
+- idade aparente
+- formato corporal
+- cabelo
+- formato do rosto
+- características naturais da cliente
+
+Aplique SOMENTE maquiagem cosmética realista.
+
+A imagem final deve parecer uma fotografia verdadeira
+da mesma pessoa depois de receber uma maquiagem profissional.
+
+PREFERÊNCIAS DA CLIENTE
 
 Ocasião:
 ${ocasiao || "não informada"}
@@ -199,14 +139,15 @@ ${ocasiao || "não informada"}
 Estilo:
 ${estilo || "natural"}
 
-Descrição:
+Descrição da cliente:
 ${
   descricao ||
-  "Crie uma maquiagem harmoniosa e elegante."
+  "Crie uma maquiagem harmoniosa, bonita e realista."
 }
 
-A maquiagem pode utilizar, conforme apropriado:
+A maquiagem pode utilizar conforme necessário:
 
+- preparação de pele
 - base
 - corretivo
 - pó
@@ -219,22 +160,37 @@ A maquiagem pode utilizar, conforme apropriado:
 - batom
 - gloss
 
-Adapte a maquiagem às características visíveis da pessoa.
+Adapte cores e intensidade às características visíveis
+do rosto e à ocasião escolhida.
 
-Entregue a imagem final editada.
+IMPORTANTE:
+
+Preserve a identidade da cliente.
+
+O objetivo é mostrar como ELA ficaria maquiada,
+e não criar outro rosto.
+
+Entregue somente a imagem final editada.
 `;
 
-    console.log("MUSA: enviando imagem ao Gemini");
+    console.log(
+      `MUSA: enviando imagem ao Gemini - modelo ${GEMINI_IMAGE_MODEL}`
+    );
 
-    // GEMINI - EDIÇÃO DE IMAGEM
+    // ======================================
+    // CHAMADA GEMINI
+    // ======================================
+
     const respostaGemini = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/interactions",
       {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
           "x-goog-api-key": GEMINI_API_KEY
         },
+
         body: JSON.stringify({
           model: GEMINI_IMAGE_MODEL,
 
@@ -265,13 +221,16 @@ Entregue a imagem final editada.
       respostaGemini.status
     );
 
+    // ======================================
+    // ERRO GEMINI
+    // ======================================
+
     if (!respostaGemini.ok) {
       console.error(
         "MUSA: erro Gemini:",
         JSON.stringify(dados)
       );
 
-      // NÃO contabiliza erro
       return res
         .status(respostaGemini.status)
         .json({
@@ -282,8 +241,10 @@ Entregue a imagem final editada.
         });
     }
 
-    // A API Interactions fornece a imagem final
-    // também através de output_image.
+    // ======================================
+    // PROCURAR A IMAGEM GERADA
+    // ======================================
+
     let imagemGerada =
       dados?.output_image?.data || null;
 
@@ -291,7 +252,7 @@ Entregue a imagem final editada.
       dados?.output_image?.mime_type ||
       "image/jpeg";
 
-    // Fallback: procura imagem dentro dos steps
+    // Fallback para respostas que chegam em steps
     if (
       !imagemGerada &&
       Array.isArray(dados?.steps)
@@ -316,12 +277,20 @@ Entregue a imagem final editada.
       }
     }
 
+    // ======================================
+    // GEMINI RESPONDEU SEM IMAGEM
+    // ======================================
+
     if (!imagemGerada) {
       console.error(
-        "MUSA: Gemini respondeu sem imagem."
+        "MUSA: Gemini respondeu, mas nenhuma imagem foi encontrada."
       );
 
-      // NÃO contabiliza
+      console.error(
+        "MUSA: resposta completa:",
+        JSON.stringify(dados)
+      );
+
       return res.status(500).json({
         sucesso: false,
         erro:
@@ -329,43 +298,26 @@ Entregue a imagem final editada.
       });
     }
 
-    // SOMENTE AGORA CONTA COMO TESTE USADO
-    const novoTotal = geracoesUsadas + 1;
+    // ======================================
+    // CONVERTER PARA DATA URL
+    // ======================================
 
-    await registrarGeracaoSucesso(
-      novoTotal
-    );
-
-    console.log(
-      `MUSA: geração ${novoTotal} de ${MAX_GERACOES_TESTE}`
-    );
-
-    if (
-      novoTotal >= MAX_GERACOES_TESTE
-    ) {
-      console.log(
-        `MUSA: LIMITE DE TESTES ATINGIDO - ${novoTotal}/${MAX_GERACOES_TESTE}`
-      );
-    }
-
-    const dataUrl =
+    const imagemFinal =
       `data:${mimeGerado};base64,${imagemGerada}`;
 
     console.log(
-      "MUSA: maquiagem gerada com sucesso"
+      "MUSA: maquiagem gerada com sucesso ✨"
     );
+
+    // ======================================
+    // RESPOSTA PARA O CANVA
+    // ======================================
 
     return res.json({
       sucesso: true,
-      imagem: dataUrl,
-      geracoesUsadas: novoTotal,
-      limite: MAX_GERACOES_TESTE,
-      geracoesRestantes:
-        Math.max(
-          0,
-          MAX_GERACOES_TESTE -
-            novoTotal
-        )
+      imagem: imagemFinal,
+      mensagem:
+        "Sua maquiagem foi criada pela Musa ✨"
     });
   } catch (erro) {
     console.error(
@@ -382,6 +334,10 @@ Entregue a imagem final editada.
   }
 });
 
+// ==========================================
+// INICIAR SERVIDOR
+// ==========================================
+
 const PORT =
   process.env.PORT || 3000;
 
@@ -394,7 +350,11 @@ app.listen(
     );
 
     console.log(
-      `MUSA: limite configurado = ${MAX_GERACOES_TESTE}`
+      `MUSA: modelo configurado = ${GEMINI_IMAGE_MODEL}`
+    );
+
+    console.log(
+      "MUSA: geração sem limite de testes"
     );
   }
 );
