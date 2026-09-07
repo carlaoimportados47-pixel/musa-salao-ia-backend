@@ -360,6 +360,7 @@ app.post("/produtos", async (req, res) => {
       descricao,
       preco,
       foto_url,
+      foto_base64,
       link_compra,
       whatsapp
     } = req.body;
@@ -377,7 +378,64 @@ app.post("/produtos", async (req, res) => {
         erro: "Supabase não configurado no servidor."
       });
     }
+let fotoFinal = foto_url || null;
 
+if (foto_base64) {
+  const match = foto_base64.match(
+    /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
+  );
+
+  if (!match) {
+    return res.status(400).json({
+      sucesso: false,
+      erro: "Formato da foto inválido."
+    });
+  }
+
+  const mimeType = match[1];
+  const base64Data = match[2];
+
+  let extensao = mimeType.split("/")[1] || "jpg";
+
+  if (extensao === "jpeg") {
+    extensao = "jpg";
+  }
+
+  const nomeArquivo =
+    `${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${extensao}`;
+
+  const buffer = Buffer.from(base64Data, "base64");
+
+  const upload = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/produtos/${nomeArquivo}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": mimeType,
+        "x-upsert": "false"
+      },
+      body: buffer
+    }
+  );
+
+  if (!upload.ok) {
+    const erroUpload = await upload.text();
+
+    console.error("MUSA: erro upload foto:", erroUpload);
+
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Não foi possível enviar a foto do produto."
+    });
+  }
+
+  fotoFinal =
+    `${SUPABASE_URL}/storage/v1/object/public/produtos/${nomeArquivo}`;
+}
     const resposta = await fetch(
       `${SUPABASE_URL}/rest/v1/products`,
       {
@@ -392,7 +450,7 @@ app.post("/produtos", async (req, res) => {
           tom_cor: tom_cor || null,
           descricao: descricao || null,
           preco: preco || null,
-          foto_url: foto_url || null,
+          foto_url: fotoFinal,
           link_compra: link_compra || null,
           whatsapp: whatsapp || null,
           disponivel: true
