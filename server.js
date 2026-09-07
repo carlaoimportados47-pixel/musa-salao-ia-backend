@@ -333,7 +333,89 @@ Entregue somente a imagem final editada.
     });
   }
 });
+// ==========================================
+// CADASTRO DE PRODUTOS - MUSA SALÃO IA
+// ==========================================
 
+app.post("/produtos", async (req, res) => {
+  try {
+    const {
+      nome,
+      categoria,
+      tom_cor,
+      descricao,
+      preco,
+      foto_url,
+      link_compra,
+      whatsapp
+    } = req.body;
+
+    if (!nome || !categoria) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Nome e categoria são obrigatórios."
+      });
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({
+        sucesso: false,
+        erro: "Supabase não configurado no servidor."
+      });
+    }
+
+    const resposta = await fetch(
+      `${SUPABASE_URL}/rest/v1/products`,
+      {
+        method: "POST",
+        headers: {
+          ...supabaseHeaders(),
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify({
+          nome,
+          categoria,
+          tom_cor: tom_cor || null,
+          descricao: descricao || null,
+          preco: preco || null,
+          foto_url: foto_url || null,
+          link_compra: link_compra || null,
+          whatsapp: whatsapp || null,
+          disponivel: true
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      console.error("MUSA: erro cadastro produto:", dados);
+
+      return res.status(resposta.status).json({
+        sucesso: false,
+        erro: "Não foi possível cadastrar o produto.",
+        detalhes: dados
+      });
+    }
+
+    console.log("MUSA: produto cadastrado:", nome);
+
+    return res.status(201).json({
+      sucesso: true,
+      mensagem: "Produto cadastrado com sucesso.",
+      produto: dados[0]
+    });
+
+  } catch (erro) {
+    console.error("MUSA: erro interno produto:", erro);
+
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Erro interno ao cadastrar produto.",
+      detalhes: erro.message
+    });
+  }
+});
 // ==========================================
 // INICIAR SERVIDOR
 // ==========================================
