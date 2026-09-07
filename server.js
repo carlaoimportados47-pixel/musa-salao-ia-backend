@@ -472,6 +472,101 @@ app.get("/produtos", async (req, res) => {
     });
   }
 });
+
+// ==========================================
+// EDITAR PRODUTO
+// ==========================================
+
+app.put("/produtos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      nome,
+      marca,
+      categoria,
+      tom_cor,
+      descricao,
+      preco,
+      foto_url,
+      link_compra,
+      whatsapp,
+      disponivel
+    } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "ID do produto não informado."
+      });
+    }
+
+    if (!nome || !categoria) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Nome e categoria são obrigatórios."
+      });
+    }
+
+    const resposta = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation"
+        },
+        body: JSON.stringify({
+          nome,
+          marca: marca || null,
+          categoria,
+          tom_cor: tom_cor || null,
+          descricao: descricao || null,
+          preco: preco === "" || preco == null ? null : Number(preco),
+          foto_url: foto_url || null,
+          link_compra: link_compra || null,
+          whatsapp: whatsapp || null,
+          disponivel: disponivel !== false,
+          updated_at: new Date().toISOString()
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    if (!resposta.ok) {
+      return res.status(resposta.status).json({
+        sucesso: false,
+        erro: "Não foi possível editar o produto.",
+        detalhes: dados
+      });
+    }
+
+    if (!Array.isArray(dados) || dados.length === 0) {
+      return res.status(404).json({
+        sucesso: false,
+        erro: "Produto não encontrado."
+      });
+    }
+
+    return res.json({
+      sucesso: true,
+      mensagem: "Produto atualizado com sucesso.",
+      produto: dados[0]
+    });
+
+  } catch (erro) {
+    console.error("MUSA: erro ao editar produto:", erro);
+
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Erro interno ao editar produto.",
+      detalhes: erro.message
+    });
+  }
+});
 // ==========================================
 // INICIAR SERVIDOR
 // ==========================================
