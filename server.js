@@ -7,7 +7,21 @@ app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// ==========================================
+// SUPABASE - BANCO DE PRODUTOS
+// ==========================================
 
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+function supabaseHeaders() {
+  return {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json"
+  };
+}
 // Modelo de imagem.
 // Se futuramente quiser trocar pelo Render,
 // basta criar GEMINI_IMAGE_MODEL no Environment.
