@@ -430,6 +430,48 @@ app.post("/produtos", async (req, res) => {
     });
   }
 });
+
+// CONSULTAR CATÁLOGO DE PRODUTOS
+app.get("/produtos", async (req, res) => {
+  try {
+    const resposta = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?select=*&order=created_at.desc`,
+      {
+        method: "GET",
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const produtos = await resposta.json();
+
+    if (!resposta.ok) {
+      return res.status(resposta.status).json({
+        sucesso: false,
+        erro: "Erro ao consultar catálogo.",
+        detalhes: produtos
+      });
+    }
+
+    return res.json({
+      sucesso: true,
+      quantidade: produtos.length,
+      produtos: produtos
+    });
+
+  } catch (erro) {
+    console.error("MUSA: erro ao consultar catálogo:", erro);
+
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Erro interno ao consultar catálogo.",
+      detalhes: erro.message
+    });
+  }
+});
 // ==========================================
 // INICIAR SERVIDOR
 // ==========================================
