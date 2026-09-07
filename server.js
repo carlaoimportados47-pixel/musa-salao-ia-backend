@@ -547,6 +547,7 @@ app.put("/produtos/:id", async (req, res) => {
       descricao,
       preco,
       foto_url,
+      foto_base64,
       link_compra,
       whatsapp,
       disponivel
@@ -565,7 +566,65 @@ app.put("/produtos/:id", async (req, res) => {
         erro: "Nome e categoria são obrigatórios."
       });
     }
+let fotoFinalEdicao = foto_url || null;
 
+if (foto_base64) {
+  const match = foto_base64.match(
+    /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/
+  );
+
+  if (!match) {
+    return res.status(400).json({
+      sucesso: false,
+      erro: "Formato da nova foto inválido."
+    });
+  }
+
+  const mimeType = match[1];
+  const base64Data = match[2];
+
+  let extensao = mimeType.split("/")[1] || "jpg";
+
+  if (extensao === "jpeg") {
+    extensao = "jpg";
+  }
+
+  const nomeArquivo =
+    `${Date.now()}-${Math.random().toString(36).slice(2)}.${extensao}`;
+
+  const buffer = Buffer.from(base64Data, "base64");
+
+  const upload = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/produtos/${nomeArquivo}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": mimeType,
+        "x-upsert": "false"
+      },
+      body: buffer
+    }
+  );
+
+  if (!upload.ok) {
+    const erroUpload = await upload.text();
+
+    console.error(
+      "MUSA: erro upload foto edição:",
+      erroUpload
+    );
+
+    return res.status(500).json({
+      sucesso: false,
+      erro: "Não foi possível enviar a nova foto do produto."
+    });
+  }
+
+  fotoFinalEdicao =
+    `${SUPABASE_URL}/storage/v1/object/public/produtos/${nomeArquivo}`;
+}
     const resposta = await fetch(
       `${SUPABASE_URL}/rest/v1/products?id=eq.${encodeURIComponent(id)}`,
       {
@@ -583,7 +642,7 @@ app.put("/produtos/:id", async (req, res) => {
           tom_cor: tom_cor || null,
           descricao: descricao || null,
           preco: preco === "" || preco == null ? null : Number(preco),
-          foto_url: foto_url || null,
+          foto_url: fotoFinalEdicao,
           link_compra: link_compra || null,
           whatsapp: whatsapp || null,
           disponivel: disponivel !== false,
